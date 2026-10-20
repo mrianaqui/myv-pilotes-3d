@@ -39,14 +39,14 @@ td.n{text-align:right;font-weight:600;white-space:nowrap}
 <body>
 <header>
   <div>
-    <div class="t">Visor 3D · pilote con espiral</div>
+    <div class="t" id="ttl">Visor 3D · pilote con espiral</div>
     <div class="s">MYV Soluciones Geotécnicas · arrastre para girar, rueda para acercar</div>
   </div>
 </header>
 <div class="wrap">
   <canvas id="cv"></canvas>
   <div class="legend">
-    <span><i class="sw" style="background:#2C6FB7"></i>Espiral (acero transversal)</span>
+    <span><i class="sw" style="background:#2C6FB7"></i><span id="lgT">Espiral (acero transversal)</span></span>
     <span><i class="sw" style="background:#E0A030"></i>Una vuelta = un paso s</span>
     <span><i class="sw" style="background:#C8423A"></i>Barras longitudinales</span>
     <span><i class="sw" style="background:#B07A2A;border-radius:50%;width:8px;height:8px"></i>Agregado</span>
@@ -74,9 +74,9 @@ td.n{text-align:right;font-weight:600;white-space:nowrap}
 
 <script>
 "use strict";
-const DEMO={D:80,Rec:7.5,dsp:1.905,db:3.226,NV:12,Rs:28.982,sbmin:15.2,sDesign:11,dagg:1.9,spNo:6,barNo:10,sReq:10.03,sMaxV:16,metodo:"Tremie"};
+const DEMO={D:80,Rec:7.5,dsp:1.905,db:3.226,NV:12,Rs:28.982,sbmin:15.2,sDesign:11,dagg:1.9,spNo:6,barNo:10,sReq:10.03,sMaxV:16,metodo:"Tremie",tipo:"Espiral"};
 let P=Object.assign({},DEMO), inExcel=false;
-const NAMES={D:"n_D",Rec:"n_Rec",dsp:"n_dsp",db:"n_db",NV:"n_NV",Rs:"n_Rs",sbmin:"n_sbmin",sDesign:"n_sDesign",dagg:"n_dagg",spNo:"n_spNo",barNo:"n_barNo",sReq:"n_sReq",sMaxV:"n_sMaxV",metodo:"n_metodo"};
+const NAMES={D:"n_D",Rec:"n_Rec",dsp:"n_dsp",db:"n_db",NV:"n_NV",Rs:"n_Rs",sbmin:"n_sbmin",sDesign:"n_sDesign",dagg:"n_dagg",spNo:"n_spNo",barNo:"n_barNo",sReq:"n_sReq",sMaxV:"n_sMaxV",metodo:"n_metodo",tipo:"n_tipoT"};
 const $=id=>document.getElementById(id);
 const fx=(v,n=1)=>(Math.round(v*Math.pow(10,n))/Math.pow(10,n)).toFixed(n).replace(".",",");
 
@@ -101,7 +101,7 @@ function draw(){
   const W=cv.clientWidth,Hh=cv.clientHeight; if(!W) return;
   ctx.clearRect(0,0,W,Hh);
   const s=+$("s").value, R=P.D/2, Rsp=(P.D-2*P.Rec-P.dsp)/2, Rs=P.Rs||((P.D-2*(P.Rec+P.dsp)-P.db)/2);
-  const cut=$("cCut").checked, turn=$("cTurn").checked, H=V.H;
+  const aros=isAros(); const cut=$("cCut").checked, turn=$("cTurn").checked, H=V.H;
   const items=[];
   const L=[-0.35,-0.75,0.55]; const Ln=Math.hypot(...L); L[0]/=Ln;L[1]/=Ln;L[2]/=Ln;
   const cy=Math.cos(V.yaw), sy=Math.sin(V.yaw), ct=Math.cos(V.tilt), st=Math.sin(V.tilt);
@@ -131,7 +131,8 @@ function draw(){
   const turns=H/s, N=Math.ceil(turns*72), k0=Math.floor(turns/2);
   for(let i=0;i<N;i++){
     const t0=i/N*turns*2*Math.PI, t1=(i+1)/N*turns*2*Math.PI, tm=(t0+t1)/2;
-    const a=proj(Rsp*Math.cos(t0),Rsp*Math.sin(t0),s*t0/(2*Math.PI),W,Hh), b=proj(Rsp*Math.cos(t1),Rsp*Math.sin(t1),s*t1/(2*Math.PI),W,Hh);
+    const za=aros?s*Math.floor(tm/(2*Math.PI))+s/2:s*t0/(2*Math.PI), zb=aros?za:s*t1/(2*Math.PI);
+    const a=proj(Rsp*Math.cos(t0),Rsp*Math.sin(t0),za,W,Hh), b=proj(Rsp*Math.cos(t1),Rsp*Math.sin(t1),zb,W,Hh);
     if(cut && (a.y1+b.y1)/2<0) continue;
     const hl=turn && tm>=2*Math.PI*k0 && tm<2*Math.PI*(k0+1);
     const li=light(Math.cos(tm),Math.sin(tm),0);
@@ -140,7 +141,7 @@ function draw(){
   /* front generatrix for dimensions: angle facing camera */
   let best=0,bd=1e9;for(let q=0;q<180;q++){const t=q/180*2*Math.PI;const p=proj(Rsp*Math.cos(t),Rsp*Math.sin(t),H/2,W,Hh);if(p.d<bd){bd=p.d;best=t;}}
   if(cut){best+=Math.PI;}
-  const zA=s*(best/(2*Math.PI)+k0), zB=zA+s, open=s-P.dsp, okF=open>=P.sbmin;
+  const zA=aros?s*k0+s/2:s*(best/(2*Math.PI)+k0), zB=zA+s, open=s-P.dsp, okF=open>=P.sbmin;
   const ux=Math.cos(best),uy=Math.sin(best);
   if(open>0){const g=proj(Rsp*ux,Rsp*uy,zA+s/2,W,Hh);items.push({d:g.d-0.01,type:"agg",p:g,r:Math.min(P.dagg,open)/2*g.k});}
   items.sort((p,q)=>q.d-p.d);
@@ -188,7 +189,7 @@ function detail(){
   h+=`<line x1="${xc+r+2}" y1="${yA}" x2="${xd2+6}" y2="${yA}" stroke="#999" stroke-dasharray="2 2"/><line x1="${xc+r+2}" y1="${yB}" x2="${xd2+6}" y2="${yB}" stroke="#999" stroke-dasharray="2 2"/>`;
   h+=`<text x="${xd2+8}" y="${(yA+yB)/2-2}" font-size="12" font-weight="600" fill="#222">s = ${fx(s)}</text>`;
   h+=`<text x="${xd2+8}" y="${(yA+yB)/2+16}" font-size="11" font-weight="600" fill="${okF?"#1E7B34":"#C0392B"}">abertura = ${fx(open)}</text>`;
-  h+=`<text x="${xc}" y="${yA+r+16}" font-size="11" text-anchor="middle" fill="#1F4F82">espiral N.° ${P.spNo} · dsp = ${fx(dsp,2)} cm</text>`;
+  h+=`<text x="${xc}" y="${yA+r+16}" font-size="11" text-anchor="middle" fill="#1F4F82">${isAros()?"aro":"espiral"} N.° ${P.spNo} · dsp = ${fx(dsp,2)} cm</text>`;
   $("det").innerHTML=h;
 }
 function dim(x,y1,y2,c){return `<line x1="${x}" y1="${y1}" x2="${x}" y2="${y2}" stroke="${c}" stroke-width="1.5"/>`+
@@ -209,7 +210,9 @@ function checks(){
    `<tr><td>Flujo del concreto</td><td class="n">${pill(okF,okF?"cumple":"no cumple")}</td></tr>`+
    `<tr><td>Cortante</td><td class="n">${pill(okV,okV?"cumple":"no cumple")}</td></tr>`;
 }
-function update(){ $("sv").textContent=fx(+$("s").value)+" cm"; draw(); detail(); checks(); }
+function isAros(){return String(P.tipo||"").toLowerCase().startsWith("aro");}
+function labels(){const r=isAros();$("ttl").textContent="Visor 3D · pilote con "+(r?"aros":"espiral");$("lgT").textContent=(r?"Aros":"Espiral")+" (acero transversal)";}
+function update(){ labels(); $("sv").textContent=fx(+$("s").value)+" cm"; draw(); detail(); checks(); }
 
 /* ---------------- interaction ---------------- */
 let drag=null;
