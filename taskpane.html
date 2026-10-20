@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Visor 3D de pilotes · MYV</title>
+<script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+<style>
+:root{--navy:#114AA1;--blue:#007FC4;--brown:#692E26;--tan:#AF8879;--ink:#222;--mut:#666;--line:#ddd;--ok:#1E7B34;--okbg:#E2F0D9;--bad:#A4161A;--badbg:#FBE3E3;--warnbg:#FFF2CC}
+*{box-sizing:border-box}
+body{margin:0;font-family:"Segoe UI",Arial,sans-serif;font-size:12.5px;color:var(--ink);background:#fff}
+header{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:3px solid var(--brown)}
+header .t{font-weight:600;color:var(--navy);font-size:14px;line-height:1.2}
+header .s{color:var(--mut);font-size:11px}
+.wrap{padding:8px 10px 14px}
+#cv{width:100%;height:400px;display:block;border:1px solid var(--line);border-radius:6px;background:#FAFBFD;touch-action:none;cursor:grab}
+#cv:active{cursor:grabbing}
+.row{display:flex;align-items:center;gap:8px;margin:8px 0}
+.row label{min-width:86px;color:var(--mut)}
+.row input[type=range]{flex:1}
+.val{min-width:56px;font-weight:600;text-align:right}
+.btns{display:flex;flex-wrap:wrap;gap:6px;margin:6px 0}
+button{font:inherit;padding:4px 10px;border:1px solid #bbb;border-radius:4px;background:#fff;cursor:pointer}
+button:hover{background:#f2f5fa}
+.chk{display:flex;flex-wrap:wrap;gap:12px;margin:4px 0 8px;color:var(--mut)}
+.legend{display:flex;flex-wrap:wrap;gap:10px;font-size:11px;color:var(--mut);margin:6px 0}
+.sw{display:inline-block;width:14px;height:6px;border-radius:3px;margin-right:4px;vertical-align:middle}
+h3{font-size:12.5px;color:#fff;background:var(--navy);margin:12px 0 6px;padding:4px 8px;border-radius:3px;font-weight:600}
+table{width:100%;border-collapse:collapse}
+td{padding:3px 4px;border-bottom:1px solid #eee}
+td.n{text-align:right;font-weight:600;white-space:nowrap}
+.pill{display:inline-block;padding:1px 8px;border-radius:10px;font-weight:600;font-size:11px}
+.ok{background:var(--okbg);color:var(--ok)}.bad{background:var(--badbg);color:var(--bad)}.warn{background:var(--warnbg);color:#7F6000}
+#status{font-size:11px;color:var(--mut);margin-top:4px}
+#det{width:100%;height:auto;border:1px solid var(--line);border-radius:6px;background:#FAFBFD}
+.note{font-size:11px;color:var(--mut);line-height:1.45}
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <div class="t">Visor 3D · pilote con espiral</div>
+    <div class="s">MYV Soluciones Geotécnicas · arrastre para girar, rueda para acercar</div>
+  </div>
+</header>
+<div class="wrap">
+  <canvas id="cv"></canvas>
+  <div class="legend">
+    <span><i class="sw" style="background:#2C6FB7"></i>Espiral (acero transversal)</span>
+    <span><i class="sw" style="background:#E0A030"></i>Una vuelta = un paso s</span>
+    <span><i class="sw" style="background:#C8423A"></i>Barras longitudinales</span>
+    <span><i class="sw" style="background:#B07A2A;border-radius:50%;width:8px;height:8px"></i>Agregado</span>
+  </div>
+  <div class="row"><label for="s">Paso s</label><input type="range" id="s" min="6" max="30" step="0.5" value="11"><span class="val" id="sv">11,0 cm</span></div>
+  <div class="btns">
+    <button id="bDesign">Usar paso de diseño</button>
+    <button id="bRead">Leer datos de la hoja</button>
+    <button id="bView">Vista inicial</button>
+  </div>
+  <div class="chk">
+    <label><input type="checkbox" id="cCut"> Quitar mitad frontal</label>
+    <label><input type="checkbox" id="cTurn" checked> Resaltar una vuelta</label>
+    <label><input type="checkbox" id="cPile" checked> Contorno del pilote</label>
+  </div>
+  <div id="status"></div>
+
+  <h3>Corte vertical entre dos vueltas</h3>
+  <svg id="det" viewBox="0 0 340 300"></svg>
+
+  <h3>Verificaciones</h3>
+  <table id="tb"></table>
+  <p class="note">Flujo del concreto: abertura libre entre vueltas s − dsp ≥ sbmin (FHWA GEC-10, Sec. 6.3). Cortante: s ≤ menor entre Av·fyt·d/Vs y la separación máxima de ACI 318-19, 9.7.6.2.2. Los valores de cortante se leen de la hoja Cargas.</p>
+</div>
+
+<script>
+"use strict";
+const DEMO={D:80,Rec:7.5,dsp:1.905,db:3.226,NV:12,Rs:28.982,sbmin:15.2,sDesign:11,dagg:1.9,spNo:6,barNo:10,sReq:10.03,sMaxV:16,metodo:"Tremie"};
+let P=Object.assign({},DEMO), inExcel=false;
+const NAMES={D:"n_D",Rec:"n_Rec",dsp:"n_dsp",db:"n_db",NV:"n_NV",Rs:"n_Rs",sbmin:"n_sbmin",sDesign:"n_sDesign",dagg:"n_dagg",spNo:"n_spNo",barNo:"n_barNo",sReq:"n_sReq",sMaxV:"n_sMaxV",metodo:"n_metodo"};
+const $=id=>document.getElementById(id);
+const fx=(v,n=1)=>(Math.round(v*Math.pow(10,n))/Math.pow(10,n)).toFixed(n).replace(".",",");
+
+/* ---------------- view state ---------------- */
+const V={yaw:-0.6,tilt:0.32,zoom:1,H:120};
+const cv=$("cv"),ctx=cv.getContext("2d");
+function resize(){const r=cv.getBoundingClientRect(),d=window.devicePixelRatio||1;cv.width=r.width*d;cv.height=r.height*d;ctx.setTransform(d,0,0,d,0,0);draw();}
+window.addEventListener("resize",resize);
+
+function proj(x,y,z,W,Hh){
+  const zc=z-V.H/2, cy=Math.cos(V.yaw), sy=Math.sin(V.yaw);
+  const x1=x*cy+y*sy, y1=-x*sy+y*cy;
+  const ct=Math.cos(V.tilt), st=Math.sin(V.tilt);
+  const depth=y1*ct+zc*st, up=zc*ct-y1*st;
+  const F=420, f=F/(F+depth);
+  const sc=Math.min(W/(P.D*1.35),Hh/(V.H*1.18))*V.zoom;
+  return {x:W/2+x1*sc*f, y:Hh/2-up*sc*f+6, d:depth, k:sc*f, x1:x1, y1:y1};
+}
+function shade(rgb,i){return "rgb("+rgb.map(c=>Math.round(Math.min(255,c*i))).join(",")+")";}
+
+function draw(){
+  const W=cv.clientWidth,Hh=cv.clientHeight; if(!W) return;
+  ctx.clearRect(0,0,W,Hh);
+  const s=+$("s").value, R=P.D/2, Rsp=(P.D-2*P.Rec-P.dsp)/2, Rs=P.Rs||((P.D-2*(P.Rec+P.dsp)-P.db)/2);
+  const cut=$("cCut").checked, turn=$("cTurn").checked, H=V.H;
+  const items=[];
+  const L=[-0.35,-0.75,0.55]; const Ln=Math.hypot(...L); L[0]/=Ln;L[1]/=Ln;L[2]/=Ln;
+  const cy=Math.cos(V.yaw), sy=Math.sin(V.yaw), ct=Math.cos(V.tilt), st=Math.sin(V.tilt);
+  const nview=(nx,ny,nz)=>{const x1=nx*cy+ny*sy,y1=-nx*sy+ny*cy;return [x1,y1*ct+nz*st,nz*ct-y1*st];};
+  const light=(nx,ny,nz)=>{const n=nview(nx,ny,nz);return 0.45+0.75*Math.max(0,-(n[0]*L[0]+n[1]*L[1])+n[2]*L[2]);};
+
+  /* pile outline */
+  if($("cPile").checked){
+    ctx.save();ctx.strokeStyle="#B8C2D3";ctx.lineWidth=1;ctx.setLineDash([4,4]);
+    [0,H].forEach(z=>{ctx.beginPath();for(let a=0;a<=64;a++){const t=a/64*2*Math.PI,p=proj(R*Math.cos(t),R*Math.sin(t),z,W,Hh);a?ctx.lineTo(p.x,p.y):ctx.moveTo(p.x,p.y);}ctx.stroke();});
+    [-1,1].forEach(sg=>{const t=Math.atan2(sg*cy,-sg*sy)+0;const xs=R*Math.cos(V.yaw)*sg,ys=R*Math.sin(V.yaw)*sg;
+      const a=proj(xs,ys,0,W,Hh),b=proj(xs,ys,H,W,Hh);ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();});
+    ctx.restore();
+  }
+  /* longitudinal bars */
+  const NV=Math.max(1,Math.round(P.NV));
+  for(let j=0;j<NV;j++){
+    const ph=2*Math.PI*j/NV+Math.PI/2, bx=Rs*Math.cos(ph), by=Rs*Math.sin(ph), li=light(Math.cos(ph),Math.sin(ph),0);
+    const nseg=24;
+    for(let k=0;k<nseg;k++){
+      const a=proj(bx,by,H*k/nseg,W,Hh), b=proj(bx,by,H*(k+1)/nseg,W,Hh);
+      if(cut && (a.y1+b.y1)/2<0) continue;
+      items.push({d:(a.d+b.d)/2,type:"seg",a,b,w:P.db*(a.k+b.k)/2,c:shade([200,66,58],li)});
+    }
+  }
+  /* spiral */
+  const turns=H/s, N=Math.ceil(turns*72), k0=Math.floor(turns/2);
+  for(let i=0;i<N;i++){
+    const t0=i/N*turns*2*Math.PI, t1=(i+1)/N*turns*2*Math.PI, tm=(t0+t1)/2;
+    const a=proj(Rsp*Math.cos(t0),Rsp*Math.sin(t0),s*t0/(2*Math.PI),W,Hh), b=proj(Rsp*Math.cos(t1),Rsp*Math.sin(t1),s*t1/(2*Math.PI),W,Hh);
+    if(cut && (a.y1+b.y1)/2<0) continue;
+    const hl=turn && tm>=2*Math.PI*k0 && tm<2*Math.PI*(k0+1);
+    const li=light(Math.cos(tm),Math.sin(tm),0);
+    items.push({d:(a.d+b.d)/2,type:"seg",a,b,w:P.dsp*(a.k+b.k)/2,c:shade(hl?[235,165,40]:[44,111,183],li)});
+  }
+  /* front generatrix for dimensions: angle facing camera */
+  let best=0,bd=1e9;for(let q=0;q<180;q++){const t=q/180*2*Math.PI;const p=proj(Rsp*Math.cos(t),Rsp*Math.sin(t),H/2,W,Hh);if(p.d<bd){bd=p.d;best=t;}}
+  if(cut){best+=Math.PI;}
+  const zA=s*(best/(2*Math.PI)+k0), zB=zA+s, open=s-P.dsp, okF=open>=P.sbmin;
+  const ux=Math.cos(best),uy=Math.sin(best);
+  if(open>0){const g=proj(Rsp*ux,Rsp*uy,zA+s/2,W,Hh);items.push({d:g.d-0.01,type:"agg",p:g,r:Math.min(P.dagg,open)/2*g.k});}
+  items.sort((p,q)=>q.d-p.d);
+  ctx.lineCap="round";
+  for(const it of items){
+    if(it.type==="seg"){
+      ctx.strokeStyle=it.c;ctx.lineWidth=Math.max(1.2,it.w);ctx.beginPath();ctx.moveTo(it.a.x,it.a.y);ctx.lineTo(it.b.x,it.b.y);ctx.stroke();
+      if(it.w>2.2){ctx.strokeStyle="rgba(255,255,255,0.28)";ctx.lineWidth=it.w*0.3;ctx.beginPath();ctx.moveTo(it.a.x,it.a.y-it.w*0.18);ctx.lineTo(it.b.x,it.b.y-it.w*0.18);ctx.stroke();}
+    }else{ctx.fillStyle="#B07A2A";ctx.beginPath();ctx.arc(it.p.x,it.p.y,Math.max(2,it.r),0,2*Math.PI);ctx.fill();}
+  }
+  /* dimension lines (on top) */
+  const off=P.dsp+5, R1=Rsp+off, R2=Rsp+off+5;
+  const pA=proj(R2*ux,R2*uy,zA,W,Hh),pB=proj(R2*ux,R2*uy,zB,W,Hh);
+  const qA=proj(R1*ux,R1*uy,zA+P.dsp/2,W,Hh),qB=proj(R1*ux,R1*uy,zB-P.dsp/2,W,Hh);
+  const eA=proj(Rsp*ux,Rsp*uy,zA,W,Hh),eB=proj(Rsp*ux,Rsp*uy,zB,W,Hh);
+  ctx.save();ctx.lineWidth=1;ctx.strokeStyle="#555";ctx.setLineDash([2,3]);
+  [[eA,pA],[eB,pB]].forEach(([u,v])=>{ctx.beginPath();ctx.moveTo(u.x,u.y);ctx.lineTo(v.x,v.y);ctx.stroke();});
+  ctx.setLineDash([]);
+  arrow(pA,pB,"#333");arrow(qA,qB,okF?"#1E7B34":"#C0392B");
+  const side=pA.x>=W/2?1:-1;
+  label("s = "+fx(s)+" cm",(pA.x+pB.x)/2+side*8,(pA.y+pB.y)/2-6,side,"#222");
+  label("abertura "+fx(open)+" cm",(qA.x+qB.x)/2+side*8,(qA.y+qB.y)/2+12,side,okF?"#1E7B34":"#C0392B");
+  ctx.restore();
+}
+function arrow(a,b,c){ctx.strokeStyle=c;ctx.fillStyle=c;ctx.lineWidth=1.4;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+  [[a,b],[b,a]].forEach(([p,q])=>{const ang=Math.atan2(p.y-q.y,p.x-q.x),h=6;ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(p.x-h*Math.cos(ang-0.4),p.y-h*Math.sin(ang-0.4));ctx.lineTo(p.x-h*Math.cos(ang+0.4),p.y-h*Math.sin(ang+0.4));ctx.closePath();ctx.fill();});}
+function label(t,x,y,side,c){ctx.font="600 12px Segoe UI, Arial";ctx.textAlign=side>0?"left":"right";const w=ctx.measureText(t).width;
+  ctx.fillStyle="rgba(255,255,255,0.85)";ctx.fillRect(side>0?x-3:x-w-3,y-12,w+6,16);ctx.fillStyle=c;ctx.fillText(t,x,y);}
+
+/* ---------------- 2D detail ---------------- */
+function detail(){
+  const s=+$("s").value, dsp=P.dsp, db=P.db, open=s-dsp, okF=open>=P.sbmin;
+  const k=Math.min(7, 230/Math.max(s+dsp,P.sbmin+dsp+2)), y0=262, x0=70;
+  const yA=y0, yB=y0-s*k, r=dsp/2*k, xc=x0+db*k+r+1;
+  const need=yA-r-P.sbmin*k;
+  let h='';
+  h+=`<rect x="${x0}" y="20" width="${db*k}" height="${y0-10}" fill="#F3C9C5" stroke="#C8423A" stroke-width="1"/>`;
+  h+=`<text x="${x0+db*k/2}" y="16" font-size="11" text-anchor="middle" fill="#8A2B24">barra N.° ${P.barNo}</text>`;
+  h+=`<line x1="${x0+db*k}" y1="${need}" x2="${xc+90}" y2="${need}" stroke="#B07A2A" stroke-dasharray="5 4"/>`;
+  h+=`<text x="${xc+92}" y="${need+4}" font-size="11" fill="#7A5418">mínimo ${fx(P.sbmin)} cm</text>`;
+  [yA,yB].forEach(y=>h+=`<circle cx="${xc}" cy="${y}" r="${Math.max(r,2)}" fill="#2C6FB7"/>`);
+  if(open>0) h+=`<circle cx="${xc}" cy="${(yA+yB)/2}" r="${Math.max(2,Math.min(P.dagg,open)/2*k)}" fill="#B07A2A"/>`;
+  const xd1=xc+r+22, xd2=xc+r+52;
+  h+=dim(xd2,yA,yB,"#333")+dim(xd1,yA-r,yB+r,okF?"#1E7B34":"#C0392B");
+  h+=`<line x1="${xc+r+2}" y1="${yA}" x2="${xd2+6}" y2="${yA}" stroke="#999" stroke-dasharray="2 2"/><line x1="${xc+r+2}" y1="${yB}" x2="${xd2+6}" y2="${yB}" stroke="#999" stroke-dasharray="2 2"/>`;
+  h+=`<text x="${xd2+8}" y="${(yA+yB)/2-2}" font-size="12" font-weight="600" fill="#222">s = ${fx(s)}</text>`;
+  h+=`<text x="${xd2+8}" y="${(yA+yB)/2+16}" font-size="11" font-weight="600" fill="${okF?"#1E7B34":"#C0392B"}">abertura = ${fx(open)}</text>`;
+  h+=`<text x="${xc}" y="${yA+r+16}" font-size="11" text-anchor="middle" fill="#1F4F82">espiral N.° ${P.spNo} · dsp = ${fx(dsp,2)} cm</text>`;
+  $("det").innerHTML=h;
+}
+function dim(x,y1,y2,c){return `<line x1="${x}" y1="${y1}" x2="${x}" y2="${y2}" stroke="${c}" stroke-width="1.5"/>`+
+  `<path d="M${x-4} ${y1-6}L${x} ${y1}L${x+4} ${y1-6}M${x-4} ${y2+6}L${x} ${y2}L${x+4} ${y2+6}" fill="none" stroke="${c}" stroke-width="1.5"/>`;}
+
+/* ---------------- checks ---------------- */
+function checks(){
+  const s=+$("s").value, open=s-P.dsp, smin=P.sbmin+P.dsp, smax=Math.min(P.sReq,P.sMaxV);
+  const okF=open>=P.sbmin, okV=s<=smax+1e-9, feas=smin<=smax;
+  const pill=(ok,t)=>`<span class="pill ${ok?"ok":"bad"}">${t}</span>`;
+  $("tb").innerHTML=
+   `<tr><td>Abertura libre s − dsp</td><td class="n">${fx(open)} cm</td></tr>`+
+   `<tr><td>Separación libre mínima sbmin (${P.metodo})</td><td class="n">${fx(P.sbmin)} cm</td></tr>`+
+   `<tr><td>Paso mínimo por flujo, sbmin + dsp</td><td class="n">${fx(smin)} cm</td></tr>`+
+   `<tr><td>Paso requerido por cortante</td><td class="n">${P.sReq>=999?"no requerido":fx(P.sReq)+" cm"}</td></tr>`+
+   `<tr><td>Paso máximo por separación</td><td class="n">${P.sMaxV>=999?"—":fx(P.sMaxV)+" cm"}</td></tr>`+
+   `<tr><td>Rango válido del paso</td><td class="n">${feas?fx(smin)+" a "+fx(smax)+" cm":'<span class="pill warn">sin solución</span>'}</td></tr>`+
+   `<tr><td>Flujo del concreto</td><td class="n">${pill(okF,okF?"cumple":"no cumple")}</td></tr>`+
+   `<tr><td>Cortante</td><td class="n">${pill(okV,okV?"cumple":"no cumple")}</td></tr>`;
+}
+function update(){ $("sv").textContent=fx(+$("s").value)+" cm"; draw(); detail(); checks(); }
+
+/* ---------------- interaction ---------------- */
+let drag=null;
+cv.addEventListener("pointerdown",e=>{drag={x:e.clientX,y:e.clientY};cv.setPointerCapture(e.pointerId);});
+cv.addEventListener("pointermove",e=>{if(!drag)return;V.yaw-= (e.clientX-drag.x)*0.01;V.tilt=Math.max(-0.15,Math.min(1.35,V.tilt+(e.clientY-drag.y)*0.006));drag={x:e.clientX,y:e.clientY};draw();});
+cv.addEventListener("pointerup",()=>drag=null);
+cv.addEventListener("wheel",e=>{e.preventDefault();V.zoom=Math.max(0.5,Math.min(4,V.zoom*(e.deltaY<0?1.1:0.9)));draw();},{passive:false});
+$("s").addEventListener("input",update);
+["cCut","cTurn","cPile"].forEach(id=>$(id).addEventListener("change",draw));
+$("bView").onclick=()=>{V.yaw=-0.6;V.tilt=0.32;V.zoom=1;draw();};
+$("bDesign").onclick=()=>{if(P.sDesign>0){$("s").value=Math.min(30,Math.max(6,P.sDesign));update();}};
+$("bRead").onclick=()=>readSheet(true);
+
+/* ---------------- Excel ---------------- */
+function setStatus(t){$("status").textContent=t;}
+async function readSheet(applyPitch){
+  if(!inExcel){setStatus("Modo demostración: abra este panel desde Excel para leer la hoja.");return;}
+  try{
+    await Excel.run(async c=>{
+      const objs={};for(const k in NAMES){objs[k]=c.workbook.names.getItemOrNullObject(NAMES[k]);}
+      await c.sync();
+      const rngs={};for(const k in objs){if(!objs[k].isNullObject){rngs[k]=objs[k].getRange();rngs[k].load("values");}}
+      await c.sync();
+      const miss=[];
+      for(const k in NAMES){if(rngs[k]){const v=rngs[k].values[0][0];if(v!==""&&v!==null)P[k]=(typeof DEMO[k]==="number")?Number(v):v;}else miss.push(NAMES[k]);}
+      setStatus("Datos leídos de la hoja ("+new Date().toLocaleTimeString()+")"+(miss.length?". Faltan nombres: "+miss.join(", "):""));
+    });
+    if(applyPitch&&P.sDesign>0) $("s").value=Math.min(30,Math.max(6,P.sDesign));
+    update();
+  }catch(err){setStatus("No se pudo leer la hoja: "+err.message);}
+}
+let tmr=null;
+function boot(){
+  resize();update();
+  if(window.Office&&Office.onReady){
+    Office.onReady(async info=>{
+      if(info.host===Office.HostType.Excel){
+        inExcel=true;await readSheet(true);
+        try{await Excel.run(async c=>{c.workbook.worksheets.onChanged.add(()=>{clearTimeout(tmr);tmr=setTimeout(()=>readSheet(false),600);});await c.sync();});}catch(e){}
+      }else setStatus("Modo demostración: abra este panel desde Excel para leer la hoja.");
+    });
+  }else setStatus("Modo demostración (sin Office): valores de ejemplo.");
+}
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",boot);else boot();
+</script>
+</body>
+</html>

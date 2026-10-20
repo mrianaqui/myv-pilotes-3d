@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Visor 3D de pilotes MYV - manifiesto del complemento de Office (Excel).
+  Publicado en https://mrianaqui.github.io/myv-pilotes-3d/ (si se mueve, reemplace esta dirección)
+  en las 4 apariciones de este archivo.
+-->
+<OfficeApp xmlns="http://schemas.microsoft.com/office/appforoffice/1.1"
+           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+           xsi:type="TaskPaneApp">
+  <Id>9c5c1ddc-1543-4465-955a-4d1adf4aed25</Id>
+  <Version>1.0.0.0</Version>
+  <ProviderName>MYV Soluciones Geotécnicas S.A.</ProviderName>
+  <DefaultLocale>es-ES</DefaultLocale>
+  <DisplayName DefaultValue="Visor 3D de pilotes MYV"/>
+  <Description DefaultValue="Visualiza en 3D la jaula de refuerzo del pilote (espiral y barras longitudinales) y verifica el paso de la espiral con los datos del libro."/>
+  <IconUrl DefaultValue="https://mrianaqui.github.io/myv-pilotes-3d/icon-32.png"/>
+  <HighResolutionIconUrl DefaultValue="https://mrianaqui.github.io/myv-pilotes-3d/icon-64.png"/>
+  <SupportUrl DefaultValue="https://mrianaqui.github.io/myv-pilotes-3d/taskpane.html"/>
+  <Hosts>
+    <Host Name="Workbook"/>
+  </Hosts>
+  <Requirements>
+    <Sets DefaultMinVersion="1.4">
+      <Set Name="ExcelApi" MinVersion="1.4"/>
+    </Sets>
+  </Requirements>
+  <DefaultSettings>
+    <SourceLocation DefaultValue="https://mrianaqui.github.io/myv-pilotes-3d/taskpane.html"/>
+  </DefaultSettings>
+  <Permissions>ReadDocument</Permissions>
+</OfficeApp>
